@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.streamlit/
+*.egg-info/
+venv/
+.venv/
+outputs/generated_affidavit_streamlit.docx
