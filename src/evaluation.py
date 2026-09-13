@@ -145,6 +145,86 @@ def ground_truth_comparison(entities: Entities, mapped: MappedContent, docx_text
             "doc_reading.py: re-extraction from generated_affidavit.docx",
         ))
 
+    # ---- Template Fidelity: parse the GENERATED text with the SAME parser
+    # used on the reference document, and compare the two structures
+    # directly, instead of only checking presence flags against `mapped`.
+    # This is a real reference-vs-output comparison (both sides parsed
+    # identically), not two independent rule sets that happen to agree.
+    from src.template_analysis import analyze_reference_document
+    generated_as_template = analyze_reference_document(docx_text)
+    gen_present = generated_as_template.present_parts()
+    missing_in_generated = [name for name, present in gen_present.items() if not present]
+    if missing_in_generated:
+        issues.append(Issue(
+            "Template Fidelity", "high",
+            f"Parsing the GENERATED document with the same structural parser used on "
+            f"the reference document could not locate: {missing_in_generated}. "
+            f"The generated file's structure does not mirror the reference's.",
+            "template_analysis.py applied to generated_affidavit.docx (reference-vs-output comparison)",
+        ))
+
+    return issues
+
+
+def check_hallucinated_entities(entities: Entities, docx_text: str) -> list:
+    """Broader hallucination scan than the date-only check above: flags any
+    Petitioner/Respondent/Deponent name, organisation, advocate firm, case
+    number, or year in the GENERATED document that doesn't match what was
+    supplied in case_information -- not just extraneous dates. Deliberately
+    scoped to entities with a known supplied value to compare against
+    (rather than a blanket "any capitalised phrase" scan), so it doesn't
+    flag legitimate template boilerplate (e.g. prayer clause (b) and (c),
+    which are fixed phrases with no entity content, not facts drawn from
+    case_information -- see content_mapping.py's `source_point: None` on
+    the CLOSING paragraph for the same source/boilerplate distinction)."""
+    issues = []
+
+    # Case number and year must appear verbatim and not be substituted.
+    if entities.case_number not in docx_text:
+        issues.append(Issue(
+            "Hallucination", "high",
+            f"Supplied case number '{entities.case_number}' not found in the generated "
+            f"document (it may have been altered).",
+            "Case Information cross-check",
+        ))
+    if entities.year not in docx_text:
+        issues.append(Issue(
+            "Hallucination", "high",
+            f"Supplied year '{entities.year}' not found in the generated document.",
+            "Case Information cross-check",
+        ))
+
+    # Every supplied party/deponent/advocate name should appear; any
+    # Respondent-labelled name in the document that ISN'T one of the
+    # supplied respondent names is a stronger signal (renamed/invented party).
+    supplied_names = {entities.petitioner_name, entities.deponent_name, entities.advocate_firm}
+    supplied_names.update(r["name"] for r in entities.respondents)
+    supplied_names.discard("")
+    for name in supplied_names:
+        if name not in docx_text:
+            issues.append(Issue(
+                "Hallucination", "medium",
+                f"Supplied name '{name}' not found verbatim in the generated document "
+                f"(it may have been altered or truncated).",
+                "Case Information cross-check",
+            ))
+
+    if entities.organisation and entities.organisation not in docx_text:
+        issues.append(Issue(
+            "Hallucination", "medium",
+            f"Supplied organisation '{entities.organisation}' not found verbatim in the "
+            f"generated document.",
+            "Case Information cross-check",
+        ))
+
+    if entities.capacity and entities.deponent_is_organisation_officer and entities.capacity not in docx_text:
+        issues.append(Issue(
+            "Hallucination", "medium",
+            f"Supplied designation '{entities.capacity}' not found verbatim in the "
+            f"generated document.",
+            "Case Information cross-check",
+        ))
+
     return issues
 
 
@@ -342,6 +422,7 @@ def evaluate(entities: Entities, mapped: MappedContent, template: TemplateStruct
     # actually WROTE, by re-reading the real file text. See doc_reading.py
     # for why this is not redundant with the checks above.
     gt_issues = ground_truth_comparison(entities, mapped, generated_text)
+    gt_issues += check_hallucinated_entities(entities, generated_text)
     deduction_by_severity = {"high": 15, "medium": 8, "low": 3}
     for issue in gt_issues:
         issues.append(issue)
