@@ -194,6 +194,46 @@ nothing — still 100/100 — which is the correct outcome: the fix adds a
 check that was structurally incapable of firing before, it doesn't loosen
 or tighten anything that was already working.
 
+**Three more issues from a second review — also fixed:**
+
+1. **`app.py` was never actually fixed.** The correction above landed in
+   `src/pipeline.py` (used by the CLI), but `app.py` — the Streamlit UI, i.e.
+   what a reviewer actually clicks through — had its own independent
+   pipeline logic and was still calling `full_text_from_mapped_content()`
+   directly. The 100/100 shown in the running app was passing through the
+   exact blind spot the first fix was supposed to close. Now fixed: `app.py`
+   imports `extract_text_from_docx` and evaluates the real generated file,
+   same as the CLI.
+2. **Hallucination detection only scanned for extraneous dates.**
+   `check_hallucinated_entities()` in `evaluation.py` now also cross-checks
+   the generated text against every supplied name (petitioner, each
+   respondent, deponent, organisation, advocate firm), designation, case
+   number, and year. Verified against the exact scenario raised as an
+   example — "Sunrise Housing Private Limited" silently becoming "Sunrise
+   Housing Developers Private Limited" — caught cleanly, with zero false
+   positives on the real clean output (`tests/test_extended_checks.py`).
+3. **Template Fidelity only checked presence flags against `mapped`,
+   never a real reference-vs-output comparison.** `ground_truth_comparison()`
+   now parses the GENERATED text with the exact same parser
+   (`template_analysis.analyze_reference_document`) used on the reference
+   document, and compares the two structures directly — both sides parsed
+   identically, not two independently-written rule sets that happen to
+   agree. Verified by corrupting a structural marker (the PRAYER heading)
+   directly in generated text and confirming it's caught.
+
+One suggestion was deliberately NOT implemented as described: tagging
+every paragraph/prayer line with an explicit case-information-vs-boilerplate
+`source` field. The underlying concern — don't let legitimate template
+language (prayer clauses (b) and (c), which are fixed phrases, not case
+facts) get flagged as hallucinated — is already satisfied without it:
+`check_hallucinated_entities()` only scans for specific supplied entity
+values (names, numbers, dates), never a blanket "any unexpected phrase"
+scan, so generic boilerplate text was never at risk of a false positive.
+`content_mapping.py`'s existing `source_point: None` on the CLOSING
+paragraph already marks the one fully-boilerplate body paragraph; adding a
+parallel tagging scheme to `prayer_lines` for a risk that doesn't
+materialize would be complexity without a corresponding bug fixed.
+
 ## AI assistant disclosure
 
 Built with Claude (Anthropic) as an AI coding assistant — used for architecture
