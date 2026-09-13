@@ -6,8 +6,6 @@ that preserves the reference format, and then evaluates its own output against t
 supplied ground truth — producing a scored report with a specific, traceable list of
 issues. Built for the Brainwonders AI Internship take-home assignment.
 
-- **Working link:** `<ADD YOUR STREAMLIT / HF SPACE / RENDER LINK HERE>`
-- **Video demo:** `<ADD YOUR LOOM / DRIVE LINK HERE>`
 
 ## What it does
 
