@@ -20,7 +20,8 @@ from src.extraction import extract_entities
 from src.template_analysis import analyze_reference_document
 from src.content_mapping import map_content
 from src.generation import generate_docx
-from src.evaluation import evaluate, full_text_from_mapped_content
+from src.evaluation import evaluate
+from src.doc_reading import extract_text_from_docx
 
 st.set_page_config(page_title="LAW AI Agent", page_icon="⚖", layout="wide")
 
@@ -265,26 +266,51 @@ def render_main():
         with st.container(border=True):
             st.markdown('<div class="panel-label">Reference Document</div>', unsafe_allow_html=True)
             st.markdown('<div class="panel-caption">The sample Affidavit in Reply used as the format reference.</div>', unsafe_allow_html=True)
-            use_sample_ref = st.checkbox("Use bundled sample reference document", value=True, key="ref_toggle")
-            if use_sample_ref:
+            ref_source = st.radio(
+                "Reference document source", ["Use bundled sample", "Upload file", "Paste text"],
+                index=0, key="ref_source", label_visibility="collapsed", horizontal=True,
+            )
+            if ref_source == "Use bundled sample":
                 with open("data/reference_affidavit.txt") as f:
                     ref_text = f.read()
                 st.text_area("Reference document (read-only preview)", ref_text, height=180, disabled=True, label_visibility="collapsed")
-            else:
+            elif ref_source == "Upload file":
                 uploaded_ref = st.file_uploader("Upload a reference Affidavit in Reply (.txt)", type=["txt"], label_visibility="collapsed")
                 ref_text = uploaded_ref.read().decode("utf-8") if uploaded_ref else None
+            else:
+                ref_text = st.text_area(
+                    "Paste the complete reference document here", height=180,
+                    placeholder="IN THE HIGH COURT OF JUDICATURE AT ...", label_visibility="collapsed",
+                )
+                ref_text = ref_text.strip() or None
 
     with col2:
         with st.container(border=True):
             st.markdown('<div class="panel-label">Case Information</div>', unsafe_allow_html=True)
             st.markdown('<div class="panel-caption">The facts, parties, and reply points for the affidavit to generate.</div>', unsafe_allow_html=True)
-            use_sample_case = st.checkbox("Use bundled sample case information", value=True, key="case_toggle")
-            if use_sample_case:
+            case_source = st.radio(
+                "Case information source", ["Use bundled sample", "Upload file", "Paste JSON"],
+                index=0, key="case_source", label_visibility="collapsed", horizontal=True,
+            )
+            if case_source == "Use bundled sample":
                 with open("data/case_information.json") as f:
                     case_json_text = f.read()
-            else:
+            elif case_source == "Upload file":
                 uploaded_case = st.file_uploader("Upload case information (.json)", type=["json"], label_visibility="collapsed")
                 case_json_text = uploaded_case.read().decode("utf-8") if uploaded_case else None
+            else:
+                case_json_text = st.text_area(
+                    "Paste case information JSON here", height=180,
+                    placeholder='{\n  "document_type": "Affidavit in Reply",\n  ...\n}',
+                    label_visibility="collapsed",
+                )
+                case_json_text = case_json_text.strip() or None
+                if case_json_text:
+                    try:
+                        json.loads(case_json_text)
+                    except json.JSONDecodeError as e:
+                        st.error(f"Invalid JSON: {e}")
+                        case_json_text = None
             if case_json_text:
                 with st.container(height=220):
                     render_case_summary(case_json_text)
@@ -313,7 +339,11 @@ def render_main():
             docx_path = "outputs/generated_affidavit_streamlit.docx"
             generate_docx(mapped, docx_path)
 
-            gen_text = full_text_from_mapped_content(mapped)
+            # CORRECTED: re-read the actual generated .docx instead of
+            # reconstructing text from `mapped` (see README "Correction log"
+            # for why the old full_text_from_mapped_content() path could
+            # never catch a bug in generate_docx() itself).
+            gen_text = extract_text_from_docx(docx_path)
             report = evaluate(entities, mapped, template, gen_text)
 
         st.success("Pipeline completed.")
