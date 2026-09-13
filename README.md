@@ -165,6 +165,35 @@ there's no separate asset URL that can 404.
 - **No handling of a second document type** was attempted (listed as "nice to have,"
   not required).
 
+## Correction log
+
+**Evaluation was checking its own blueprint, not the delivered file (fixed).**
+Originally, `evaluate()` was given `generated_text` from
+`full_text_from_mapped_content(mapped)` — a text reconstruction of
+`MappedContent`, the same object that was fed INTO `generate_docx()`. That
+meant none of the six evaluation dimensions ever actually read the
+generated `.docx`; a bug in `generation.py`'s docx-writing code (a dropped
+paragraph, a garbled heading, a mis-numbered section) could not have been
+detected, no matter how good the checks looked on paper. Per the
+assignment's own Section 9 workflow ("Generated Affidavit in Reply →
+Entity/Structure Extraction → Ground Truth Comparison"), the evaluation is
+supposed to extract from the generated artefact, not its precursor.
+
+Fixed by adding `src/doc_reading.py` (reads the actual `.docx` bytes) and
+`ground_truth_comparison()` in `evaluation.py` (cross-checks that real text
+against `case_information` and the mapping stage's own expectations —
+paragraph count, sequencing, respondent numbers, verification range,
+exhibit labels, required headings). `pipeline.py` now passes the real
+extracted text into `evaluate()` instead of the reconstruction.
+`tests/test_ground_truth_extraction.py` proves this mattered: it simulates
+a realistic generation bug (`generate_docx()` silently dropping the last
+body paragraph while writing), and shows the OLD evaluation path still
+returns zero Structure issues on the buggy file, while the NEW path catches
+it immediately. On the actual (bug-free) `generate_docx()`, the fix changes
+nothing — still 100/100 — which is the correct outcome: the fix adds a
+check that was structurally incapable of firing before, it doesn't loosen
+or tighten anything that was already working.
+
 ## AI assistant disclosure
 
 Built with Claude (Anthropic) as an AI coding assistant — used for architecture
@@ -173,4 +202,7 @@ modules, the fault-injection test suite, and this README. All design decisions a
 the specific fixes described above (deponent rule handling, removing unsupported
 fixed phrases, correcting the substantive-answer denial logic) were reviewed and
 verified by re-running the full test suite and manually inspecting the generated
-document after each change.
+document after each change. The ground-truth re-extraction fix in the *Correction
+log* above was found and implemented by Claude during a review of this repository
+after initial delivery, and is verified the same way — full test suite re-run
+(14/14 passing) plus a new test that reproduces the exact blind spot it closes.
