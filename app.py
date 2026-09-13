@@ -1,9 +1,20 @@
 """
 Streamlit frontend for the Legal Document Generation & Evaluation Agent.
 
+Two views in one file, toggled via session_state:
+  1. Landing screen — title, one-line pitch, "Enter the Agent" button.
+  2. Main workflow — the actual assignment pipeline (unchanged logic from
+     the original app: extraction -> mapping -> generation -> evaluation).
+
+Visual identity is deliberately "legal gazette meets tech tool" (ink-navy /
+parchment / brass), not a generic SaaS-card theme — see README design notes.
+All colors/fonts are CSS-only (no external image assets), so nothing can
+break or fail to load on a fresh deployment.
+
 Run locally with:  streamlit run app.py
 """
 import json
+import base64
 import streamlit as st
 from src.extraction import extract_entities
 from src.template_analysis import analyze_reference_document
@@ -11,147 +22,328 @@ from src.content_mapping import map_content
 from src.generation import generate_docx
 from src.evaluation import evaluate, full_text_from_mapped_content
 
-st.set_page_config(page_title="Legal Document Generation & Evaluation Agent", layout="wide")
+st.set_page_config(page_title="LAW AI Agent", page_icon="⚖", layout="wide")
 
-st.title("Legal Document Generation & Evaluation Agent")
-st.caption(
-    "Extracts structured entities \u2192 analyzes a reference document's structure \u2192 "
-    "generates a new Affidavit in Reply \u2192 evaluates it against the ground truth. "
-    "Supports **Affidavit in Reply** only (scoped per the assignment)."
-)
 
-with st.expander("How this works (architecture)", expanded=False):
+@st.cache_data
+def _hero_bg_base64() -> str:
+    with open("assets/hero_background.jpg", "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+
+HERO_BG_B64 = _hero_bg_base64()
+
+# ---------------------------------------------------------------------------
+# Theme (CSS-only — ink-navy / parchment / brass, Source Serif 4 + Inter)
+# ---------------------------------------------------------------------------
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+:root {
+    --ink-navy: #101B30;
+    --parchment: #F1E9D8;
+    --brass: #A6812F;
+    --seal-maroon: #6E2A2A;
+    --ink-text: #1B2333;
+    --muted-slate: #5B6472;
+}
+
+html, body, [class*="css"]  { font-family: 'Inter', sans-serif; }
+h1, h2, h3, .serif-display { font-family: 'Source Serif 4', serif; }
+
+.stApp { background-color: var(--ink-navy); }
+
+/* ---------- Landing screen ---------- */
+.hero-wrap {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center;
+    min-height: 82vh; padding: 2rem 1rem;
+}
+.hero-title {
+    color: var(--parchment); font-size: 3.2rem; font-weight: 700;
+    letter-spacing: 0.01em; margin: 0;
+    text-shadow: 0 2px 18px rgba(0,0,0,0.5);
+}
+.hero-sub {
+    color: #E8D9B5; font-size: 1.08rem; margin-top: 1rem;
+    max-width: 580px; line-height: 1.65; font-family: 'Inter', sans-serif;
+    text-shadow: 0 1px 12px rgba(0,0,0,0.6);
+}
+.hero-fine {
+    color: #C9B98A; font-size: 0.85rem; margin-top: 1.6rem;
+    text-shadow: 0 1px 8px rgba(0,0,0,0.6);
+}
+
+/* ---------- Main workflow screen ---------- */
+.topbar {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 0.25rem 0 1.1rem 0; border-bottom: 1px solid #2A3752;
+    margin-bottom: 1.6rem;
+}
+.topbar-title { color: var(--parchment); font-size: 1.4rem; font-weight: 700; }
+.topbar-sub { color: var(--muted-slate); font-size: 0.85rem; }
+
+.stepper { display: flex; gap: 0.5rem; margin-bottom: 1.8rem; flex-wrap: wrap; }
+.step {
+    flex: 1; min-width: 130px; background: #16223C; border: 1px solid #2A3752;
+    border-radius: 6px; padding: 0.6rem 0.8rem;
+}
+.step-num {
+    color: var(--brass); font-family: 'Source Serif 4', serif;
+    font-weight: 700; font-size: 1.1rem; margin-right: 0.4rem;
+}
+.step-label { color: var(--parchment); font-size: 0.82rem; }
+
+.panel-label {
+    font-weight: 600; font-size: 0.95rem; margin-bottom: 0.3rem; color: var(--parchment);
+}
+.panel-caption { color: var(--muted-slate); font-size: 0.82rem; margin-bottom: 0.8rem; }
+
+/* Native Streamlit bordered container -> dark card matching the stepper */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: #16223C !important;
+    border-color: #2A3752 !important;
+    border-radius: 6px !important;
+}
+
+/* Shrink metric value font so 6-across dimension scores don't truncate */
+[data-testid="stMetricValue"] {
+    font-size: 1.35rem !important;
+    color: var(--parchment) !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.78rem !important;
+    color: var(--muted-slate) !important;
+}
+
+.score-big {
+    font-family: 'Source Serif 4', serif; font-weight: 700;
+    font-size: 3.4rem; color: var(--brass); line-height: 1;
+}
+.score-label { color: var(--parchment); font-size: 0.95rem; margin-top: 0.3rem; }
+
+/* Streamlit primary button -> brass */
+.stButton > button[kind="primary"] {
+    background-color: var(--brass); border-color: var(--brass); color: var(--ink-navy);
+    font-weight: 600;
+}
+.stButton > button[kind="primary"]:hover {
+    background-color: #8f6f28; border-color: #8f6f28; color: var(--parchment);
+}
+</style>
+"""
+st.markdown(CSS, unsafe_allow_html=True)
+
+if "entered" not in st.session_state:
+    st.session_state.entered = False
+
+# Landing-screen-only background: applied to the whole app container (not a
+# div inside it) so that Streamlit-native elements rendered afterwards — the
+# button, the fine-print line — sit on top of the same image in normal
+# document flow, rather than falling outside a div that would otherwise only
+# wrap the markdown title/subtitle.
+if not st.session_state.entered:
+    st.markdown(f"""
+    <style>
+    [data-testid="stAppViewContainer"] {{
+        background:
+            linear-gradient(rgba(16,27,48,0.55), rgba(16,27,48,0.88)),
+            url('data:image/jpeg;base64,{HERO_BG_B64}');
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
+# Landing screen
+# ---------------------------------------------------------------------------
+def render_landing():
     st.markdown("""
-```
-Reference Document  ->  Template / Structure Analysis  \\
-                                                          -> Content Mapping -> Document Generation
-Case Information     -> Entity Extraction               /                            |
-                                                                                       v
-                                                                     Evaluation (vs. ground truth)
-                                                                                       |
-                                                                                       v
-                                                                       Evaluation Score + Report
-```
-    All extraction, mapping, and evaluation logic is **deterministic (rule-based)** —
-    not LLM-graded — so every score is reproducible and traceable to a specific rule
-    in the format specification. See the README for full design rationale.
-    """)
+    <div class="hero-wrap">
+        <div class="hero-title">LAW AI Agent</div>
+        <div class="hero-sub">
+            Reads a reference Affidavit in Reply, takes case-specific facts, generates
+            a new affidavit that preserves the reference structure, and evaluates its
+            own output against the supplied ground truth — with a scored, traceable
+            issue report.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("Enter the Agent", type="primary", use_container_width=True):
+            st.session_state.entered = True
+            st.rerun()
 
-with col1:
-    st.subheader("1. Reference Document")
-    st.caption("The sample Affidavit in Reply used as the format reference.")
-    use_sample_ref = st.checkbox("Use bundled sample reference document", value=True)
-    if use_sample_ref:
-        with open("data/reference_affidavit.txt") as f:
-            ref_text = f.read()
-        st.text_area("Reference document (read-only preview)", ref_text, height=200, disabled=True)
-    else:
-        uploaded_ref = st.file_uploader("Upload a reference Affidavit in Reply (.txt)", type=["txt"])
-        ref_text = uploaded_ref.read().decode("utf-8") if uploaded_ref else None
+    st.markdown(
+        '<div class="hero-fine" style="text-align:center;">'
+        'Built for the Brainwonders AI Internship assignment — Legal Document '
+        'Generation &amp; Evaluation Agent</div>',
+        unsafe_allow_html=True,
+    )
 
-with col2:
-    st.subheader("2. Case Information")
-    st.caption("The facts, parties, and reply points for the affidavit to generate.")
-    use_sample_case = st.checkbox("Use bundled sample case information", value=True)
-    if use_sample_case:
-        with open("data/case_information.json") as f:
-            case_json_text = f.read()
-        st.text_area("Case information (read-only preview)", case_json_text, height=200, disabled=True)
-    else:
-        uploaded_case = st.file_uploader("Upload case information (.json)", type=["json"])
-        case_json_text = uploaded_case.read().decode("utf-8") if uploaded_case else None
 
-st.divider()
+# ---------------------------------------------------------------------------
+# Main workflow screen (same pipeline calls as before, restyled)
+# ---------------------------------------------------------------------------
+def render_main():
+    st.markdown("""
+    <div class="topbar">
+        <div class="topbar-title">⚖ LAW AI Agent</div>
+        <div class="topbar-sub">Affidavit in Reply — Generation &amp; Evaluation</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-if st.button("Generate Affidavit & Evaluate", type="primary", use_container_width=True):
-    if not ref_text or not case_json_text:
-        st.error("Please provide both a reference document and case information.")
-        st.stop()
+    stages = [
+        ("1", "Template Analysis"), ("2", "Entity Extraction"),
+        ("3", "Content Mapping"), ("4", "Document Generation"),
+        ("5", "Evaluation"), ("6", "Report"),
+    ]
+    stepper_html = '<div class="stepper">' + "".join(
+        f'<div class="step"><span class="step-num">{n}</span>'
+        f'<span class="step-label">{label}</span></div>'
+        for n, label in stages
+    ) + "</div>"
+    st.markdown(stepper_html, unsafe_allow_html=True)
 
-    with st.spinner("Running pipeline: extraction \u2192 mapping \u2192 generation \u2192 evaluation..."):
-        # Stage 1: Template analysis
-        template = analyze_reference_document(ref_text)
+    col1, col2 = st.columns(2)
 
-        # Stage 2: Entity extraction (write uploaded case info to a temp path if needed)
-        case_data = json.loads(case_json_text)
-        import tempfile, os
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
-            json.dump(case_data, tmp)
-            tmp_path = tmp.name
-        entities = extract_entities(tmp_path)
-        os.unlink(tmp_path)
+    with col1:
+        with st.container(border=True):
+            st.markdown('<div class="panel-label">Reference Document</div>', unsafe_allow_html=True)
+            st.markdown('<div class="panel-caption">The sample Affidavit in Reply used as the format reference.</div>', unsafe_allow_html=True)
+            use_sample_ref = st.checkbox("Use bundled sample reference document", value=True, key="ref_toggle")
+            if use_sample_ref:
+                with open("data/reference_affidavit.txt") as f:
+                    ref_text = f.read()
+                st.text_area("Reference document (read-only preview)", ref_text, height=180, disabled=True, label_visibility="collapsed")
+            else:
+                uploaded_ref = st.file_uploader("Upload a reference Affidavit in Reply (.txt)", type=["txt"], label_visibility="collapsed")
+                ref_text = uploaded_ref.read().decode("utf-8") if uploaded_ref else None
 
-        # Stage 3: Content mapping
-        mapped = map_content(entities)
+    with col2:
+        with st.container(border=True):
+            st.markdown('<div class="panel-label">Case Information</div>', unsafe_allow_html=True)
+            st.markdown('<div class="panel-caption">The facts, parties, and reply points for the affidavit to generate.</div>', unsafe_allow_html=True)
+            use_sample_case = st.checkbox("Use bundled sample case information", value=True, key="case_toggle")
+            if use_sample_case:
+                with open("data/case_information.json") as f:
+                    case_json_text = f.read()
+                st.text_area("Case information (read-only preview)", case_json_text, height=180, disabled=True, label_visibility="collapsed")
+            else:
+                uploaded_case = st.file_uploader("Upload case information (.json)", type=["json"], label_visibility="collapsed")
+                case_json_text = uploaded_case.read().decode("utf-8") if uploaded_case else None
 
-        # Stage 4: Document generation
-        docx_path = "outputs/generated_affidavit_streamlit.docx"
-        generate_docx(mapped, docx_path)
+    st.write("")
+    generate_clicked = st.button("Generate & Evaluate", type="primary", use_container_width=True)
 
-        # Stage 5 & 6: Evaluation + report
-        gen_text = full_text_from_mapped_content(mapped)
-        report = evaluate(entities, mapped, template, gen_text)
+    if generate_clicked:
+        if not ref_text or not case_json_text:
+            st.error("Please provide both a reference document and case information.")
+            st.stop()
 
-    st.success("Pipeline completed.")
+        with st.spinner("Running pipeline: extraction → mapping → generation → evaluation..."):
+            template = analyze_reference_document(ref_text)
 
-    tab1, tab2, tab3 = st.tabs(["Generated Document", "Evaluation Report", "Intermediate Data"])
+            case_data = json.loads(case_json_text)
+            import tempfile, os
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+                json.dump(case_data, tmp)
+                tmp_path = tmp.name
+            entities = extract_entities(tmp_path)
+            os.unlink(tmp_path)
 
-    with tab1:
-        st.subheader("Generated Affidavit in Reply")
-        st.text(gen_text)
-        with open(docx_path, "rb") as f:
-            st.download_button(
-                "Download as .docx", f, file_name="generated_affidavit.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+            mapped = map_content(entities)
 
-    with tab2:
-        st.subheader(f"Overall Score: {report.overall_score:.1f} / 100")
-        score_cols = st.columns(len(report.scores))
-        for col, (dim, score) in zip(score_cols, report.scores.items()):
-            col.metric(dim, f"{score:.0f}/100")
+            docx_path = "outputs/generated_affidavit_streamlit.docx"
+            generate_docx(mapped, docx_path)
 
-        st.markdown("### Issues Detected")
-        if not report.issues:
-            st.info("No issues detected.")
-        else:
-            for issue in report.issues:
-                severity_color = {"high": "\U0001F534", "medium": "\U0001F7E1", "low": "\U0001F7E2"}
-                st.markdown(
-                    f"{severity_color.get(issue.severity, '')} **[{issue.dimension}]** "
-                    f"{issue.description}  \n_Source: {issue.source}_"
+            gen_text = full_text_from_mapped_content(mapped)
+            report = evaluate(entities, mapped, template, gen_text)
+
+        st.success("Pipeline completed.")
+
+        tab1, tab2, tab3 = st.tabs(["Generated Document", "Evaluation Report", "Intermediate Data"])
+
+        with tab1:
+            st.subheader("Generated Affidavit in Reply")
+            st.text(gen_text)
+            with open(docx_path, "rb") as f:
+                st.download_button(
+                    "Download as .docx", f, file_name="generated_affidavit.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
 
-        st.markdown("### Scoring Explanation")
-        st.write(report.explanation)
+        with tab2:
+            score_col, rest_col = st.columns([1, 3])
+            with score_col:
+                st.markdown(
+                    f'<div class="score-big">{report.overall_score:.0f}</div>'
+                    f'<div class="score-label">Overall Score / 100</div>',
+                    unsafe_allow_html=True,
+                )
+            with rest_col:
+                score_cols = st.columns(len(report.scores))
+                for c, (dim, score) in zip(score_cols, report.scores.items()):
+                    c.metric(dim, f"{score:.0f}/100")
 
-        st.download_button(
-            "Download evaluation report (JSON)",
-            json.dumps(report.to_dict(), indent=2),
-            file_name="evaluation_report.json", mime="application/json"
-        )
-        st.download_button(
-            "Download evaluation report (Markdown)",
-            report.to_markdown(),
-            file_name="evaluation_report.md", mime="text/markdown"
-        )
+            st.markdown("### Issues Detected")
+            if not report.issues:
+                st.info("No issues detected.")
+            else:
+                for issue in report.issues:
+                    severity_color = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+                    st.markdown(
+                        f"{severity_color.get(issue.severity, '')} **[{issue.dimension}]** "
+                        f"{issue.description}  \n_Source: {issue.source}_"
+                    )
 
-    with tab3:
-        st.subheader("Extracted Entities")
-        st.json({
-            "forum": entities.forum, "case_number": entities.case_number,
-            "year": entities.year, "petitioner": entities.petitioner_name,
-            "respondent_number": entities.respondent_number,
-            "respondent_name": entities.respondent_name,
-            "deponent": entities.deponent_name, "capacity": entities.capacity,
-            "organisation": entities.organisation,
-            "deponent_is_organisation_officer": entities.deponent_is_organisation_officer,
-        })
-        st.subheader("Reference Template Structure (parsed)")
-        st.json(template.present_parts())
-        st.write(f"Reference document body paragraphs: {len(template.paragraphs)}")
+            st.markdown("### Scoring Explanation")
+            st.write(report.explanation)
 
-st.divider()
-st.caption("Built for the Brainwonders AI Internship assignment \u2014 Legal Document Generation & Evaluation Agent.")
+            dl1, dl2 = st.columns(2)
+            with dl1:
+                st.download_button(
+                    "Download evaluation report (JSON)",
+                    json.dumps(report.to_dict(), indent=2),
+                    file_name="evaluation_report.json", mime="application/json",
+                    use_container_width=True,
+                )
+            with dl2:
+                st.download_button(
+                    "Download evaluation report (Markdown)",
+                    report.to_markdown(),
+                    file_name="evaluation_report.md", mime="text/markdown",
+                    use_container_width=True,
+                )
+
+        with tab3:
+            st.subheader("Extracted Entities")
+            st.json({
+                "forum": entities.forum, "case_number": entities.case_number,
+                "year": entities.year, "petitioner": entities.petitioner_name,
+                "respondent_number": entities.respondent_number,
+                "respondent_name": entities.respondent_name,
+                "deponent": entities.deponent_name, "capacity": entities.capacity,
+                "organisation": entities.organisation,
+                "deponent_is_organisation_officer": entities.deponent_is_organisation_officer,
+            })
+            st.subheader("Reference Template Structure (parsed)")
+            st.json(template.present_parts())
+            st.write(f"Reference document body paragraphs: {len(template.paragraphs)}")
+
+    st.write("")
+    if st.button("← Back to start"):
+        st.session_state.entered = False
+        st.rerun()
+
+
+# ---------------------------------------------------------------------------
+if st.session_state.entered:
+    render_main()
+else:
+    render_landing()

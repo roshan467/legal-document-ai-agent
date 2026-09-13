@@ -11,6 +11,10 @@ issues. Built for the Brainwonders AI Internship take-home assignment.
 
 ## What it does
 
+The app opens on a landing screen (title + one-line pitch over a themed
+background) with an **Enter the Agent** button, then moves into the actual
+workflow:
+
 1. **Template / structure analysis** — parses the reference affidavit into its 10 fixed parts.
 2. **Entity extraction** — loads `data/case_information.json` into a structured schema (forum, parties, deponent, reply points, exhibits, attestation).
 3. **Content mapping** — maps each reply point onto the correct paragraph "move" (identity/perusal, blanket denial, preliminary position, substantive answer, closing), applying the fixed-phrase glossary and the **deponent rule** (a person deposes for themself; an officer deposes *"as the [designation] of"* an organisation respondent).
@@ -134,6 +138,12 @@ extractive mode if the local LLM is unavailable, rather than failing outright).
 **Structured JSON intermediate representation between every stage.** `Entities` →
 `MappedContent` are typed dataclasses, not strings-with-string-parsing, so each
 stage has a clear contract and can be unit tested independently (see `tests/`).
+
+**Landing screen background is embedded as base64, not a linked file.** `app.py`
+reads `assets/hero_background.jpg` and embeds it directly into the injected CSS
+via a data URI. This means the background can never show as a broken image on a
+fresh deployment regardless of static-file-serving quirks on a given host —
+there's no separate asset URL that can 404.
 
 ## Known limitations and failure cases
 
