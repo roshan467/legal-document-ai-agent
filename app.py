@@ -7,7 +7,7 @@ Two views in one file, toggled via session_state:
      the original app: extraction -> mapping -> generation -> evaluation).
 
 Visual identity is deliberately "legal gazette meets tech tool" (ink-navy /
-parchment / brass), not a generic SaaS-card theme — see README design notes.
+parchment / brass), not a generic SaaS-card theme  see README design notes.
 All colors/fonts are CSS-only (no external image assets), so nothing can
 break or fail to load on a fresh deployment.
 
@@ -215,9 +215,9 @@ def render_landing():
     <div class="hero-wrap">
         <div class="hero-title">LAW AI Agent</div>
         <div class="hero-sub">
-            Reads a reference Affidavit in Reply, takes case-specific facts, generates
+            Reads a reference Affidavit in Reply, takes case specific facts, generates
             a new affidavit that preserves the reference structure, and evaluates its
-            own output against the supplied ground truth — with a scored, traceable
+            own output against the supplied ground truth  with a scored, traceable
             issue report.
         </div>
     </div>
@@ -231,7 +231,7 @@ def render_landing():
 
     st.markdown(
         '<div class="hero-fine" style="text-align:center;">'
-        'Built for the Brainwonders AI Internship assignment — Legal Document '
+     
         'Generation &amp; Evaluation Agent</div>',
         unsafe_allow_html=True,
     )
@@ -244,7 +244,7 @@ def render_main():
     st.markdown("""
     <div class="topbar">
         <div class="topbar-title">⚖ LAW AI Agent</div>
-        <div class="topbar-sub">Affidavit in Reply — Generation &amp; Evaluation</div>
+        <div class="topbar-sub"></div>
     </div>
     """, unsafe_allow_html=True)
 
