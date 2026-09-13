@@ -3,7 +3,7 @@
 A modular AI agent that reads a reference **Affidavit in Reply**, extracts structured
 entities from a separate case-information file, generates a new Affidavit in Reply
 that preserves the reference format, and then evaluates its own output against the
-supplied ground truth — producing a scored report with a specific, traceable list of
+supplied ground truth  producing a scored report with a specific, traceable list of
 issues. Built for the Brainwonders AI Internship take-home assignment.
 
 
@@ -88,13 +88,13 @@ flowchart TD
 The format spec (`01_Affidavit_Format_Explained.pdf`) gives an exact, fixed
 structure with rules explicitly marked "must never break" (paragraph-count/verb
 agreement). For a fixed, well-specified document type, letting an LLM freely
-generate this text would only add hallucination risk for zero benefit — a rule-based
+generate this text would only add hallucination risk for zero benefit  a rule-based
 renderer guarantees 100% template fidelity and zero hallucinated structure by
 construction. **Rejected:** pure LLM generation from a prompt containing the
 reference + case info; too easy for a model to silently invent or drop a required
 part under this scoring rubric.
 
-**All evaluation checks are deterministic (regex/rule-based), not LLM-graded — and
+**All evaluation checks are deterministic (regex/rule-based), not LLM-graded  and
 there are more than the required minimum of three.** Nine checks run across the six
 dimensions. Every issue cites the specific rule/section it violates (see the
 `source` field), so scores are fully reproducible and auditable, unlike an LLM
@@ -114,14 +114,14 @@ fault-injection test.
 
 **Fixed legal phrases are only used where the supplied facts actually support
 them.** The reference sample includes the boilerplate phrase *"the Petitioner has
-suppressed material facts"* in its Preliminary Position paragraph — but the supplied
+suppressed material facts"* in its Preliminary Position paragraph  but the supplied
 case information for this case makes no such claim. Copying that phrase over would
 be inventing an unsupported factual assertion (exactly what the Hallucination
 dimension is meant to catch), so it's deliberately omitted here. This is the same
 reasoning applied to substantive-answer paragraphs: an earlier draft prepended "the
 same are false, incorrect and denied" before *every* substantive point, which is
 factually wrong for an affirmative point like "Authority for the Communication" (an
-explanation, not a denial) — this was identified and corrected during development,
+explanation, not a denial)  this was identified and corrected during development,
 before this was reviewed as a finished module, to a neutral lead-in that lets each
 point's own content carry its actual meaning.
 
@@ -148,7 +148,7 @@ there's no separate asset URL that can 404.
 - **Single document type, single case, by design** — this only handles Affidavit in
   Reply, and the entity extractor expects the specific JSON shape used here. Scope
   was deliberately kept small per the assignment's Section 5.
-- **Prose can read as slightly repetitive** — because generation is template-filling
+- **Prose can read as slightly repetitive**  because generation is template-filling
   rather than free rewriting, some substantive paragraphs share similar sentence
   openers ("With reference to the averments made in the Petition, I say that..."). The
   optional LLM-polish stage can reduce this, but is off by default.
