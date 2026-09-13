@@ -1,0 +1,13 @@
+{
+  "overall_score": 100.0,
+  "dimension_scores": {
+    "Structure": 100.0,
+    "Consistency": 100.0,
+    "Completeness": 100.0,
+    "Entity Accuracy": 100.0,
+    "Template Fidelity": 100.0,
+    "Hallucination Check": 100.0
+  },
+  "issues": [],
+  "explanation": "Overall score is the unweighted mean of the six dimension scores. Each dimension starts at 100 and is deducted per specific rule violation found (see 'source' on each issue for the exact rule). All checks are deterministic (regex/rule-based against the case information and the format specification) \u2014 none rely on an LLM's subjective judgment, so every score is fully reproducible and traceable to a specific rule."
+}
