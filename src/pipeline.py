@@ -12,7 +12,8 @@ from src.extraction import extract_entities
 from src.template_analysis import analyze_reference_document
 from src.content_mapping import map_content
 from src.generation import generate_docx
-from src.evaluation import evaluate, full_text_from_mapped_content
+from src.evaluation import evaluate
+from src.doc_reading import extract_text_from_docx
 
 
 def run_pipeline(case_info_path: str, reference_doc_path: str, output_dir: str = "outputs"):
@@ -33,8 +34,14 @@ def run_pipeline(case_info_path: str, reference_doc_path: str, output_dir: str =
     docx_path = os.path.join(output_dir, "generated_affidavit.docx")
     generate_docx(mapped, docx_path)
 
-    # Stage 5 & 6: Validation / evaluation + report
-    generated_text = full_text_from_mapped_content(mapped)
+    # Stage 5a: Entity / Structure Extraction FROM THE GENERATED FILE.
+    # This is the correction: previously `generated_text` was a text
+    # reconstruction of `mapped` (the object that fed generation.py), which
+    # meant the evaluation below could never detect a bug in generation.py
+    # itself. Reading the actual .docx closes that gap -- see doc_reading.py.
+    generated_text = extract_text_from_docx(docx_path)
+
+    # Stage 5b & 6: Validation / evaluation + report
     report = evaluate(entities, mapped, template, generated_text)
 
     report_json_path = os.path.join(output_dir, "evaluation_report.json")

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from src.extraction import Entities
 from src.content_mapping import MappedContent
 from src.template_analysis import TemplateStructure
+from src.doc_reading import extract_structure
 
 
 @dataclass
@@ -73,6 +74,78 @@ class EvaluationReport:
 def _find_all_respondent_number_mentions(doc_text: str):
     """Return all 'Respondent No.X' occurrences found anywhere in the document."""
     return re.findall(r"Respondent\s*No\.?\s*(\d+)", doc_text)
+
+
+def ground_truth_comparison(entities: Entities, mapped: MappedContent, docx_text: str) -> list:
+    """THE CORRECTION: re-extracts structure from the actual generated .docx
+    text (not from MappedContent) and cross-checks it against case_information
+    and the mapping stage's own expectations. Every issue found here is a bug
+    that could ONLY be in generation.py (the docx-writing step) -- if
+    MappedContent was correct (checked separately by the rest of evaluate())
+    but the rendered file doesn't match it, that is a generation bug, and
+    this is the only place in the pipeline positioned to catch it, because
+    it is the only place that reads the actual file."""
+    issues = []
+    structure = extract_structure(docx_text)
+
+    expected_para_count = len(mapped.paragraphs)
+    if len(structure["paragraph_numbers"]) != expected_para_count:
+        issues.append(Issue(
+            "Structure", "high",
+            f"The GENERATED .docx contains {len(structure['paragraph_numbers'])} numbered "
+            f"body paragraphs, but the content-mapping stage produced {expected_para_count}. "
+            f"generation.py dropped, duplicated, or mis-numbered content while writing the file.",
+            "doc_reading.py: re-extraction from generated_affidavit.docx",
+        ))
+    elif structure["paragraph_numbers"] != list(range(1, expected_para_count + 1)):
+        issues.append(Issue(
+            "Structure", "high",
+            f"Paragraph numbers in the generated .docx are out of sequence: "
+            f"{structure['paragraph_numbers']} (expected 1..{expected_para_count}).",
+            "doc_reading.py: re-extraction from generated_affidavit.docx",
+        ))
+
+    non_matching = {n for n in structure["respondent_mentions"]
+                     if int(n) not in {r["number"] for r in entities.respondents}}
+    if non_matching:
+        issues.append(Issue(
+            "Entity Accuracy", "high",
+            f"Generated .docx mentions respondent number(s) not present in "
+            f"case_information: {sorted(non_matching)}.",
+            "doc_reading.py: re-extraction from generated_affidavit.docx",
+        ))
+
+    if not structure["has_prayer"]:
+        issues.append(Issue("Structure", "high", "PRAYER heading not found in the generated .docx.",
+                             "doc_reading.py: re-extraction from generated_affidavit.docx"))
+    if not structure["has_verification"]:
+        issues.append(Issue("Structure", "high", "VERIFICATION heading not found in the generated .docx.",
+                             "doc_reading.py: re-extraction from generated_affidavit.docx"))
+
+    if mapped.paragraphs:
+        expected_range = f"1 to {len(mapped.paragraphs)}"
+        if structure["verification_range"] != expected_range:
+            issues.append(Issue(
+                "Consistency", "high",
+                f"Generated .docx verification range reads '{structure['verification_range']}', "
+                f"expected '{expected_range}' given the actual body paragraph count.",
+                "doc_reading.py: re-extraction from generated_affidavit.docx",
+            ))
+
+    defined_exhibits = set()
+    for rp in entities.reply_points:
+        if rp.get("exhibit"):
+            defined_exhibits.add(rp["exhibit"]["label"].strip("EXHIBIT-'").strip("'"))
+    found_exhibits = set(structure["exhibit_labels"])
+    if defined_exhibits != found_exhibits:
+        issues.append(Issue(
+            "Entity Accuracy", "medium",
+            f"Exhibit labels found in the generated .docx {sorted(found_exhibits)} differ "
+            f"from those defined in case_information {sorted(defined_exhibits)}.",
+            "doc_reading.py: re-extraction from generated_affidavit.docx",
+        ))
+
+    return issues
 
 
 def evaluate(entities: Entities, mapped: MappedContent, template: TemplateStructure,
@@ -262,6 +335,18 @@ def evaluate(entities: Entities, mapped: MappedContent, template: TemplateStruct
                                  f"supplied in case information.",
                                  "Case Information cross-check"))
     scores["Hallucination Check"] = max(0.0, hallucination_score)
+
+    # ---------- GROUND TRUTH COMPARISON (re-extraction from the generated .docx) ----------
+    # Everything above checks `mapped` -- the object that FED generation.py.
+    # This is the one part of the evaluation that checks what generation.py
+    # actually WROTE, by re-reading the real file text. See doc_reading.py
+    # for why this is not redundant with the checks above.
+    gt_issues = ground_truth_comparison(entities, mapped, generated_text)
+    deduction_by_severity = {"high": 15, "medium": 8, "low": 3}
+    for issue in gt_issues:
+        issues.append(issue)
+        deduction = deduction_by_severity.get(issue.severity, 10)
+        scores[issue.dimension] = max(0.0, scores.get(issue.dimension, 100.0) - deduction)
 
     # ---------- OVERALL ----------
     overall = sum(scores.values()) / len(scores)
